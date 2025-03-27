@@ -15,7 +15,8 @@ class Palavra:
     categoria_id: int
     dificuldade: int
     frases: List[str] = None
-    variacoes: List[str] = None  # Novo campo
+    variacoes: List[str] = None
+    categoria_nome: Optional[str] = None  
 
 @dataclass
 class Frase:
