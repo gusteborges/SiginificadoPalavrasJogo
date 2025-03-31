@@ -1,2 +1,8 @@
-.venv
-.teste
+# Ignora ambientes virtuais do Python
+.venv/
+venv/
+env/
+
+# Ignora cache do Python
+__pycache__/
+*.py[cod]
