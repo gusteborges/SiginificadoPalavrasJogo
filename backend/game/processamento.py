@@ -5,6 +5,7 @@ import unicodedata
 from typing import Tuple, List
 from nltk.stem import RSLPStemmer
 
+
 class AvaliadorRespostas:
     def __init__(self):
         # Configuração otimizada para português
