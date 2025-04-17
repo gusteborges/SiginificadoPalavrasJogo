@@ -6,3 +6,11 @@ env/
 # Ignora cache do Python
 __pycache__/
 *.py[cod]
+node_modules
+*.log
+*.log.*
+*.log.*.*
+*.log.*.*.*
+*.log.*.*.*.*
+*.log.*.*.*.*.*
+*.log.*.*.*.*.*.*
