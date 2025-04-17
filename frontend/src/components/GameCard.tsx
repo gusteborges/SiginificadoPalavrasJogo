@@ -45,53 +45,39 @@ export function GameCard({ word, onSubmit, feedback, loading }: GameCardProps) {
   };
 
   const handleGerarFrase = async () => {
-    console.log('Botão Gerar Frase clicado');
-    console.log('Estado atual:', {
-      gerando,
-      wordId: word.id,
-      frasesRestantes,
-      totalFrases: frases.length
-    });
-
-    if (gerando || !word.id || word.id === -1 || frasesRestantes <= 0) {
-      console.log('Retornando devido a:', {
-        gerando,
-        semId: !word.id,
-        idInvalido: word.id === -1,
-        semFrasesRestantes: frasesRestantes <= 0
-      });
+    // Protege contra reentrância, ID inválido ou sem frases restantes
+    if (gerando || !word.id || frasesRestantes <= 0) {
       return;
     }
-    
+  
+    setGerando(true);
+    setErro(null);
+  
     try {
-      setGerando(true);
-      setErro(null);
-      
       console.log('Enviando requisição para gerar frase:', {
         palavra_id: word.id,
         palavra: word.termo,
         definicao: word.definicao,
         categoria: word.categoria
       });
-
+  
       const response = await apiService.gerarFrase({
         palavra_id: word.id,
         palavra: word.termo,
         definicao: word.definicao,
         categoria: word.categoria
       });
-      
-      console.log('Resposta recebida:', response);
-      
-      // Atualiza o estado com a nova frase
-      setFrases(prevFrases => {
-        const novasFrases = [...prevFrases, response.frase];
-        console.log('Atualizando frases:', novasFrases);
-        return novasFrases;
+  
+      // Adiciona a nova frase ao array
+      setFrases(prev => {
+        const novas = [...prev, response.frase];
+        console.log('Atualizando frases:', novas);
+        return novas;
       });
+      // Atualiza o contador de frases restantes
       setFrasesRestantes(response.frases_restantes);
       setErro(null);
-      
+  
     } catch (error) {
       console.error('Erro ao gerar frase:', error);
       if (error instanceof Error) {
@@ -99,11 +85,13 @@ export function GameCard({ word, onSubmit, feedback, loading }: GameCardProps) {
       } else {
         setErro('Erro ao gerar frase. Tente novamente.');
       }
+  
     } finally {
+      // Garante que, independentemente de sucesso ou erro, o flag seja resetado
       setGerando(false);
     }
   };
-
+  
   return (
     <div className="w-full max-w-2xl rounded-xl bg-app-card-light dark:bg-app-card-dark p-4 sm:p-6 shadow-xl transition-all border border-gold-500/30 mx-4">
       <div className="mb-4 sm:mb-6 text-center">

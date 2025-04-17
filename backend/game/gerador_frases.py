@@ -3,7 +3,7 @@ import os
 from openai import OpenAI
 from dotenv import load_dotenv, find_dotenv
 import sqlite3
-from main import DB_PATH
+from backend.config import DB_PATH
 
 class GeradorFrases:
     def __init__(self):
@@ -30,7 +30,7 @@ class GeradorFrases:
             
             # Testa a conexão
             response = self.client.chat.completions.create(
-                model="mistral-tiny",  # modelo mais básico e gratuito
+                model="mistral-tiny",
                 messages=[{"role": "user", "content": "Teste de conexão"}],
                 max_tokens=10
             )
