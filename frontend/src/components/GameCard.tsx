@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { Word } from '../types';
+import { apiService } from '../services/api';
 
 interface GameCardProps {
   word: Word;
@@ -15,12 +16,92 @@ interface GameCardProps {
 
 export function GameCard({ word, onSubmit, feedback, loading }: GameCardProps) {
   const [answer, setAnswer] = useState('');
+  const [frasesRestantes, setFrasesRestantes] = useState(3);
+  const [gerando, setGerando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const [frases, setFrases] = useState<string[]>([]);
+
+  // Atualiza as frases quando a palavra muda
+  useEffect(() => {
+    console.log('Palavra atualizada:', word);
+    if (word && word.frases) {
+      console.log('Atualizando frases:', word.frases);
+      setFrases(word.frases);
+      // Calcula frases restantes (não conta a frase padrão)
+      const frasesGeradas = Math.max(0, word.frases.length - 1);
+      setFrasesRestantes(3 - frasesGeradas);
+    } else {
+      // Reset do estado quando não há palavra
+      setFrases([]);
+      setFrasesRestantes(3);
+    }
+  }, [word]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!answer.trim() || loading) return;
     onSubmit(answer);
     setAnswer('');
+  };
+
+  const handleGerarFrase = async () => {
+    console.log('Botão Gerar Frase clicado');
+    console.log('Estado atual:', {
+      gerando,
+      wordId: word.id,
+      frasesRestantes,
+      totalFrases: frases.length
+    });
+
+    if (gerando || !word.id || word.id === -1 || frasesRestantes <= 0) {
+      console.log('Retornando devido a:', {
+        gerando,
+        semId: !word.id,
+        idInvalido: word.id === -1,
+        semFrasesRestantes: frasesRestantes <= 0
+      });
+      return;
+    }
+    
+    try {
+      setGerando(true);
+      setErro(null);
+      
+      console.log('Enviando requisição para gerar frase:', {
+        palavra_id: word.id,
+        palavra: word.termo,
+        definicao: word.definicao,
+        categoria: word.categoria
+      });
+
+      const response = await apiService.gerarFrase({
+        palavra_id: word.id,
+        palavra: word.termo,
+        definicao: word.definicao,
+        categoria: word.categoria
+      });
+      
+      console.log('Resposta recebida:', response);
+      
+      // Atualiza o estado com a nova frase
+      setFrases(prevFrases => {
+        const novasFrases = [...prevFrases, response.frase];
+        console.log('Atualizando frases:', novasFrases);
+        return novasFrases;
+      });
+      setFrasesRestantes(response.frases_restantes);
+      setErro(null);
+      
+    } catch (error) {
+      console.error('Erro ao gerar frase:', error);
+      if (error instanceof Error) {
+        setErro(error.message);
+      } else {
+        setErro('Erro ao gerar frase. Tente novamente.');
+      }
+    } finally {
+      setGerando(false);
+    }
   };
 
   return (
@@ -42,13 +123,24 @@ export function GameCard({ word, onSubmit, feedback, loading }: GameCardProps) {
           />
         </div>
 
-        <button
-          type="submit"
-          disabled={!answer.trim() || loading}
-          className="w-full rounded-lg bg-gold-600 dark:bg-gold-500 py-2 sm:py-3 px-4 font-semibold text-white dark:text-app-card-dark transition-colors hover:bg-gold-500 dark:hover:bg-gold-400 focus:outline-none focus:ring-2 focus:ring-gold-500 focus:ring-offset-2 disabled:opacity-50 text-sm sm:text-base"
-        >
-          {loading ? 'Verificando...' : 'Enviar Resposta'}
-        </button>
+        <div className="flex gap-3">
+          <button
+            type="submit"
+            disabled={!answer.trim() || loading}
+            className="flex-1 rounded-lg bg-gold-600 dark:bg-gold-500 py-2 sm:py-3 px-4 font-semibold text-white dark:text-app-card-dark transition-colors hover:bg-gold-500 dark:hover:bg-gold-400 focus:outline-none focus:ring-2 focus:ring-gold-500 focus:ring-offset-2 disabled:opacity-50 text-sm sm:text-base"
+          >
+            {loading ? 'Verificando...' : 'Enviar Resposta'}
+          </button>
+
+          <button
+            type="button"
+            onClick={handleGerarFrase}
+            disabled={gerando || frasesRestantes <= 0 || word.id === -1}
+            className="rounded-lg bg-gold-600/80 dark:bg-gold-500/80 py-2 sm:py-3 px-4 font-semibold text-white dark:text-app-card-dark transition-colors hover:bg-gold-500 dark:hover:bg-gold-400 focus:outline-none focus:ring-2 focus:ring-gold-500 focus:ring-offset-2 disabled:opacity-50 text-sm sm:text-base whitespace-nowrap"
+          >
+            {gerando ? 'Gerando...' : `Gerar Frase (${frasesRestantes})`}
+          </button>
+        </div>
       </form>
 
       {feedback.show && (
@@ -61,6 +153,25 @@ export function GameCard({ word, onSubmit, feedback, loading }: GameCardProps) {
           {feedback.definicaoCorreta && (
             <p className="mt-1 sm:mt-2 text-xs sm:text-sm opacity-90">Definição correta: {feedback.definicaoCorreta}</p>
           )}
+        </div>
+      )}
+
+      {erro && (
+        <div className="mt-3 text-red-600 dark:text-red-400 text-sm text-center">
+          {erro}
+        </div>
+      )}
+
+      {frases.length > 0 && (
+        <div className="mt-4 space-y-2">
+          <h3 className="text-lg font-semibold text-gold-600 dark:text-gold-500">Frases de exemplo:</h3>
+          <ul className="list-disc pl-5 space-y-1">
+            {frases.map((frase, index) => (
+              <li key={index} className="text-sm text-gray-800 dark:text-gray-200">
+                {frase}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </div>

@@ -9,6 +9,7 @@ const api = axios.create({
 });
 
 export interface PalavraResposta {
+  id: number;
   termo: string;
   categoria: string;
   definicao: string;
@@ -26,6 +27,18 @@ export interface VerificacaoResposta {
   similaridade: number;
   definicao_correta?: string;
   feedback: string;
+}
+
+export interface GerarFraseRequest {
+  palavra_id: number;
+  palavra: string;
+  definicao: string;
+  categoria: string;
+}
+
+export interface GerarFraseResponse {
+  frase: string;
+  frases_restantes: number;
 }
 
 // Função auxiliar para tratar erros
@@ -54,7 +67,11 @@ const handleApiError = (error: unknown) => {
       throw new Error('Não foi possível conectar ao servidor. Verifique se o backend está rodando.');
     }
 
-    const errorData = axiosError.response.data as { detail?: string };
+    interface ErrorResponse {
+      detail?: string;
+    }
+
+    const errorData = axiosError.response.data as ErrorResponse;
     throw new Error(`Erro na API: ${errorData.detail || axiosError.message}`);
   }
   
@@ -103,6 +120,18 @@ export const apiService = {
       return response.data;
     } catch (error) {
       console.error('Erro ao verificar resposta:', error);
+      throw handleApiError(error);
+    }
+  },
+
+  gerarFrase: async (request: GerarFraseRequest): Promise<GerarFraseResponse> => {
+    try {
+      console.log('Gerando nova frase para a palavra:', request.palavra);
+      const response = await api.post<GerarFraseResponse>('/gerar-frase', request);
+      console.log('Frase gerada:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Erro ao gerar frase:', error);
       throw handleApiError(error);
     }
   },

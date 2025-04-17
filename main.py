@@ -6,13 +6,21 @@ from typing import List, Optional, AsyncGenerator
 from contextlib import asynccontextmanager
 import uvicorn
 from backend.game.processamento import AvaliadorRespostas
+from backend.game.gerador_frases import GeradorFrases
 from backend.database.schema import criar_banco
+from dotenv import load_dotenv, find_dotenv
+import os
+
+# Carrega as variáveis de ambiente do arquivo .env
+print("Carregando variáveis de ambiente...")
+load_dotenv(find_dotenv())
 
 # Constantes
-DB_PATH = "backend/database/banco_palavras.db"
+DB_PATH = os.getenv('DB_PATH', "backend/database/banco_palavras.db")
 
 # Modelos Pydantic
 class PalavraResposta(BaseModel):
+    id: int
     termo: str
     categoria: str
     definicao: str
@@ -29,27 +37,35 @@ class VerificacaoResposta(BaseModel):
     definicao_correta: Optional[str] = None
     feedback: str
 
+class GerarFraseRequest(BaseModel):
+    palavra_id: int
+    palavra: str
+    definicao: str
+    categoria: str
+
+class GerarFraseResponse(BaseModel):
+    frase: str
+    frases_restantes: int
+
 # Lifespan handler (substitui o on_event deprecated)
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Gerencia o ciclo de vida da aplicação"""
     try:
-        # Cria ou verifica o banco
-        if not criar_banco(DB_PATH):
-            raise RuntimeError("Falha ao criar/verificar o banco de dados")
-        
-        # Treina o modelo com as definições
-        conn = conectar_banco()
+        print("Iniciando aplicação...")
+        # Limpa a tabela de frases ao iniciar
+        conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        cursor.execute("SELECT definicao FROM palavras")
-        definicoes = [row["definicao"] for row in cursor.fetchall()]
-        avaliador.treinar_modelo(definicoes)
+        cursor.execute("DELETE FROM frases;")
+        conn.commit()
         conn.close()
         
-        print("✅ Sistema inicializado com sucesso")
-        yield
+        yield  # Este yield é obrigatório
+        
+        print("Encerrando aplicação...")
     except Exception as e:
-        raise RuntimeError(f"Falha na inicialização: {str(e)}")
+        print(f"Erro na inicialização: {str(e)}")
+        raise
 
 # Cria a aplicação FastAPI com lifespan
 app = FastAPI(lifespan=lifespan)
@@ -63,8 +79,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Inicialização do avaliador
+# Inicialização dos serviços
 avaliador = AvaliadorRespostas()
+gerador_frases = GeradorFrases()
 
 # Funções de banco de dados
 def conectar_banco():
@@ -76,18 +93,41 @@ def conectar_banco():
     except sqlite3.Error as e:
         raise RuntimeError(f"Erro ao conectar ao banco: {str(e)}")
 
-def obter_frases(palavra_id: int):
-    """Busca frases associadas a uma palavra"""
+def obter_frases(palavra_id: int, palavra: str, definicao: str, categoria: str) -> List[str]:
+    """Busca frases associadas a uma palavra ou gera novas se necessário"""
     try:
         conn = conectar_banco()
         cursor = conn.cursor()
-        cursor.execute("SELECT frase FROM frases WHERE palavra_id = ?", (palavra_id,))
-        frases = [row["frase"] for row in cursor.fetchall()]
+        
+        # Busca todas as frases que NÃO são a frase padrão
+        cursor.execute("""
+            SELECT frase FROM frases 
+            WHERE palavra_id = ? 
+            AND frase NOT LIKE 'Esta é uma frase de exemplo%'
+            AND frase NOT LIKE 'Aqui está outro exemplo%'
+            ORDER BY rowid
+        """, (palavra_id,))
+        frases_reais = [row["frase"] for row in cursor.fetchall()]
+        
+        # Se não houver frases reais, gera novas usando o gerador
+        if not frases_reais:
+            try:
+                frases_reais = gerador_frases.gerar_frases(palavra, definicao, categoria, palavra_id)
+            except Exception as e:
+                print(f"⚠️ Erro ao gerar frases iniciais: {str(e)}")
+                # Em caso de erro, usa frases padrão
+                frases_reais = [
+                    f"Esta é uma frase de exemplo usando a palavra '{palavra}'.",
+                    f"Aqui está outro exemplo com '{palavra}'.",
+                    f"E esta é a terceira frase com '{palavra}'."
+                ]
+        
         conn.close()
-        return frases
+        return frases_reais
+        
     except sqlite3.Error as e:
-        print(f"⚠️ Erro ao buscar frases: {str(e)}")
-        return []
+        print(f"⚠️ Erro ao buscar/salvar frases: {str(e)}")
+        return [f"Esta é uma frase de exemplo usando a palavra '{palavra}'."]
 
 def obter_palavra_aleatoria():
     """Busca uma palavra aleatória com todas as relações"""
@@ -108,10 +148,11 @@ def obter_palavra_aleatoria():
             conn.close()
             return None
         
-        frases = obter_frases(palavra["id"])
+        frases = obter_frases(palavra["id"], palavra["palavra"], palavra["definicao"], palavra["categoria"])
         conn.close()
         
         return {
+            "id": palavra["id"],
             "termo": palavra["palavra"],
             "categoria": palavra["categoria"],
             "definicao": palavra["definicao"],
@@ -140,7 +181,7 @@ def buscar_palavra(termo: str):
             conn.close()
             return None
         
-        frases = obter_frases(palavra["id"])
+        frases = obter_frases(palavra["id"], palavra["palavra"], palavra["definicao"], palavra["categoria"])
         conn.close()
         
         return {
@@ -200,6 +241,82 @@ async def verificar_resposta(request: VerificacaoRequest):
         raise HTTPException(
             status_code=400,
             detail=f"Erro ao verificar resposta: {str(e)}"
+        )
+
+@app.post("/api/gerar-frase", response_model=GerarFraseResponse)
+async def gerar_frase(request: GerarFraseRequest):
+    try:
+        conn = conectar_banco()
+        cursor = conn.cursor()
+        
+        # Verifica quantas frases reais já existem para esta palavra
+        cursor.execute("""
+            SELECT frase FROM frases 
+            WHERE palavra_id = ? 
+            AND frase NOT LIKE 'Esta é uma frase de exemplo%'
+            AND frase NOT LIKE 'Aqui está outro exemplo%'
+            ORDER BY rowid
+        """, (request.palavra_id,))
+        frases_existentes = [row["frase"] for row in cursor.fetchall()]
+        total_frases_geradas = len(frases_existentes)
+
+        # Se já temos 3 ou mais frases, retorna a última
+        if total_frases_geradas >= 3:
+            conn.close()
+            return {
+                "frase": frases_existentes[-1],
+                "frases_restantes": 0
+            }
+
+        # Se precisamos de mais frases, geramos todas de uma vez
+        try:
+            novas_frases = gerador_frases.gerar_frases(
+                request.palavra,
+                request.definicao,
+                request.categoria,
+                request.palavra_id
+            )
+            
+            # Retorna a primeira frase nova que não existe ainda
+            for frase in novas_frases:
+                if frase not in frases_existentes:
+                    frases_restantes = max(0, 2 - total_frases_geradas)
+                    conn.close()
+                    return {
+                        "frase": frase,
+                        "frases_restantes": frases_restantes
+                    }
+            
+            # Se não encontrou frase nova, usa uma genérica
+            frase = f"Aqui está outro exemplo usando '{request.palavra}'."
+            
+        except Exception as e:
+            print(f"⚠️ Erro ao gerar frase: {str(e)}")
+            frase = f"Aqui está outro exemplo usando '{request.palavra}'."
+            
+            # Salva a frase genérica no banco
+            cursor.execute(
+                "INSERT INTO frases (palavra_id, frase) VALUES (?, ?)",
+                (request.palavra_id, frase)
+            )
+            conn.commit()
+        
+        # Retorna a frase e quantas ainda podem ser geradas
+        frases_restantes = max(0, 2 - total_frases_geradas)
+        conn.close()
+        
+        return {
+            "frase": frase,
+            "frases_restantes": frases_restantes
+        }
+        
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        print(f"⚠️ Erro no endpoint gerar-frase: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao gerar frase: {str(e)}"
         )
 
 def run_server():

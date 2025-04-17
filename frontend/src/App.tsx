@@ -15,12 +15,12 @@ function App() {
     currentWord: null,
     score: 0,
     totalAttempts: 0,
+    loading: true,
     feedback: {
       show: false,
       isCorrect: false,
       message: '',
     },
-    loading: true,
   });
 
   useEffect(() => {
@@ -127,6 +127,7 @@ function App() {
         
         <GameCard
           word={gameState.currentWord || {
+            id: -1,
             termo: gameState.loading ? 'Carregando...' : 'Erro ao carregar palavra',
             categoria: '',
             definicao: '',

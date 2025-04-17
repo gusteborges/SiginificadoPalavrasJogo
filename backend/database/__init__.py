@@ -4,7 +4,7 @@ import os
 from typing import Union
 from .schema import criar_banco
 from .seeds import popular_banco
-from .queries import get_random_word, get_palavras_e_definicoes  # remova get_categorias
+from .queries import get_random_word, get_palavras_e_definicoes
 
 
 # Caminho para o banco de dados (relativo ao arquivo atual)
@@ -26,17 +26,21 @@ def inicializar_banco(db_path: Union[str, Path]) -> bool:
     try:
         if not os.path.exists(db_path_str):
             print(f"🔧 Criando novo banco em {db_path_str}...")
-            conn = criar_banco(db_path_str)
             
-            if not conn:
+            # Cria as tabelas do banco
+            if not criar_banco(db_path_str):
                 print("❌ Falha ao criar as tabelas do banco")
                 return False
-                
+            
+            # Cria uma conexão para popular os dados
+            conn = sqlite3.connect(db_path_str)
+            
             # Popula com dados iniciais
             if not popular_banco(conn):
                 print("❌ Falha ao popular o banco com dados iniciais")
+                conn.close()
                 return False
-                
+            
             conn.close()
             print("✅ Banco criado e populado com sucesso!")
             return True
