@@ -47,47 +47,64 @@ export function GameCard({ word, onSubmit, feedback, loading }: GameCardProps) {
   const handleGerarFrase = async () => {
     // Protege contra reentrância, ID inválido ou sem frases restantes
     if (gerando || !word.id || frasesRestantes <= 0) {
+      console.log('[DEBUG] Ignorando requisição:', { 
+        gerando, 
+        wordId: word.id, 
+        frasesRestantes 
+      });
       return;
     }
-  
+
     setGerando(true);
     setErro(null);
-  
+
     try {
-      console.log('Enviando requisição para gerar frase:', {
-        palavra_id: word.id,
-        palavra: word.termo,
-        definicao: word.definicao,
-        categoria: word.categoria
+      console.log('[DEBUG] Iniciando geração - Estado atual:', {
+        frasesAtuais: frases.length,
+        frasesRestantes,
+        gerando
       });
-  
+
       const response = await apiService.gerarFrase({
         palavra_id: word.id,
         palavra: word.termo,
         definicao: word.definicao,
         categoria: word.categoria
       });
-  
-      // Adiciona a nova frase ao array
+
+      console.log('[DEBUG] Resposta recebida:', {
+        novaFrase: response.frase,
+        frasesRestantesRecebidas: response.frases_restantes
+      });
+
+      // Atualiza o estado de forma atômica
       setFrases(prev => {
+        // Verifica se a frase já existe para evitar duplicatas
+        if (prev.includes(response.frase)) {
+          console.log('[DEBUG] Frase duplicada detectada');
+          return prev;
+        }
         const novas = [...prev, response.frase];
-        console.log('Atualizando frases:', novas);
+        console.log('[DEBUG] Novas frases:', novas);
         return novas;
       });
+
       // Atualiza o contador de frases restantes
       setFrasesRestantes(response.frases_restantes);
-      setErro(null);
-  
+      
+      // Desabilita o botão se não há mais frases para gerar
+      if (response.frases_restantes <= 0) {
+        console.log('[DEBUG] Desabilitando botão - Sem frases restantes');
+      }
+
     } catch (error) {
-      console.error('Erro ao gerar frase:', error);
+      console.error('[DEBUG] Erro ao gerar frase:', error);
       if (error instanceof Error) {
         setErro(error.message);
       } else {
         setErro('Erro ao gerar frase. Tente novamente.');
       }
-  
     } finally {
-      // Garante que, independentemente de sucesso ou erro, o flag seja resetado
       setGerando(false);
     }
   };
