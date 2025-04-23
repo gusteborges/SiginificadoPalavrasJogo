@@ -104,10 +104,30 @@ export const apiService = {
     try {
       console.log('Iniciando requisição para buscar palavra aleatória...');
       const response = await api.get<PalavraResposta>('/palavra-aleatoria');
-      console.log('Palavra recebida:', response.data);
+      console.log('Resposta completa:', {
+        status: response.status,
+        headers: response.headers,
+        data: response.data
+      });
+      
+      // Validação da resposta
+      if (!response.data) {
+        throw new Error('Resposta vazia do servidor');
+      }
+      
+      if (!response.data.termo || !response.data.definicao) {
+        console.error('Dados inválidos recebidos:', response.data);
+        throw new Error('Dados inválidos recebidos do servidor');
+      }
+      
       return response.data;
     } catch (error) {
-      console.error('Erro ao buscar palavra aleatória:', error);
+      console.error('Erro detalhado ao buscar palavra aleatória:', {
+        error,
+        isAxiosError: axios.isAxiosError(error),
+        message: error instanceof Error ? error.message : 'Erro desconhecido',
+        stack: error instanceof Error ? error.stack : undefined
+      });
       throw handleApiError(error);
     }
   },

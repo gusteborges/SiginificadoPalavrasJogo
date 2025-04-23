@@ -81,52 +81,64 @@ def conectar():
 # GET /api/palavra-aleatoria
 @app.get("/api/palavra-aleatoria", response_model=PalavraResposta)
 def palavra_aleatoria():
+    print("[DEBUG] Iniciando busca de palavra aleatória")
     conn = conectar()
     cur = conn.cursor()
-    cur.execute(
-        """
-        SELECT p.id, p.palavra, p.definicao, p.dificuldade, c.nome as categoria
-        FROM palavras p
-        JOIN categorias c ON p.categoria_id = c.id
-        LEFT JOIN (
-            SELECT palavra_id, COUNT(*) AS cnt FROM frases GROUP BY palavra_id
-        ) f ON p.id = f.palavra_id
-        WHERE IFNULL(f.cnt,0) < 4
-        ORDER BY RANDOM() LIMIT 1
-        """,
-    )
-    row = cur.fetchone()
-    if not row:
-        conn.close()
-        raise HTTPException(status_code=404, detail="Todas as palavras completaram as frases")
-
-    # Busca frases existentes
-    cur.execute(
-        "SELECT frase FROM frases WHERE palavra_id=? ORDER BY rowid ASC", (row['id'],)
-    )
-    frases = [r['frase'] for r in cur.fetchall()]
-
-    # Se não tem nenhuma frase, gera a frase inicial
-    if not frases:
-        print(f"[DEBUG] Gerando frase inicial para palavra ID={row['id']}")
-        frase_inicial = gerar_com_retry(row['palavra'], row['definicao'], row['categoria'])
+    try:
         cur.execute(
-            "INSERT INTO frases(palavra_id, frase) VALUES(?,?)",
-            (row['id'], frase_inicial)
+            """
+            SELECT p.id, p.palavra, p.definicao, p.dificuldade, c.nome as categoria
+            FROM palavras p
+            JOIN categorias c ON p.categoria_id = c.id
+            LEFT JOIN (
+                SELECT palavra_id, COUNT(*) AS cnt FROM frases GROUP BY palavra_id
+            ) f ON p.id = f.palavra_id
+            WHERE IFNULL(f.cnt,0) < 4
+            ORDER BY RANDOM() LIMIT 1
+            """,
         )
-        conn.commit()
-        frases = [frase_inicial]
-        print(f"[DEBUG] Frase inicial gerada: {frase_inicial}")
+        row = cur.fetchone()
+        print("[DEBUG] Resultado da query:", dict(row) if row else None)
+        
+        if not row:
+            print("[DEBUG] Nenhuma palavra encontrada")
+            conn.close()
+            raise HTTPException(status_code=404, detail="Todas as palavras completaram as frases")
 
-    conn.close()
-    return {
-        "id": row['id'],
-        "termo": row['palavra'],
-        "categoria": row['categoria'],
-        "definicao": row['definicao'],
-        "dificuldade": row['dificuldade'],
-        "frases": frases,
-    }
+        # Busca frases existentes
+        cur.execute(
+            "SELECT frase FROM frases WHERE palavra_id=? ORDER BY rowid ASC", (row['id'],)
+        )
+        frases = [r['frase'] for r in cur.fetchall()]
+        print("[DEBUG] Frases encontradas:", frases)
+
+        # Se não tem nenhuma frase, gera a frase inicial
+        if not frases:
+            print(f"[DEBUG] Gerando frase inicial para palavra ID={row['id']}")
+            frase_inicial = gerar_com_retry(row['palavra'], row['definicao'], row['categoria'])
+            cur.execute(
+                "INSERT INTO frases(palavra_id, frase) VALUES(?,?)",
+                (row['id'], frase_inicial)
+            )
+            conn.commit()
+            frases = [frase_inicial]
+            print(f"[DEBUG] Frase inicial gerada: {frase_inicial}")
+
+        resposta = {
+            "id": row['id'],
+            "termo": row['palavra'],
+            "categoria": row['categoria'],
+            "definicao": row['definicao'],
+            "dificuldade": row['dificuldade'],
+            "frases": frases,
+        }
+        print("[DEBUG] Resposta final:", resposta)
+        conn.close()
+        return resposta
+    except Exception as e:
+        print(f"[ERROR] Erro ao buscar palavra aleatória: {str(e)}")
+        conn.close()
+        raise HTTPException(status_code=500, detail=str(e))
 
 # POST /api/verificar
 @app.post("/api/verificar", response_model=VerificacaoResposta)
